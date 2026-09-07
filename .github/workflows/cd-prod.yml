@@ -1,0 +1,250 @@
+name: CD — Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to promote to prod (must be healthy in staging)"
+        required: true
+      release_notes:
+        description: "Short release description"
+        required: false
+        default: "Routine production deployment"
+      skip_staging_check:
+        description: "Skip staging health check? (emergency only)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write   # create git tags + GitHub Release
+  id-token: write   # OIDC for AWS
+  deployments: write
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  GITOPS_REPO: ${{ vars.GITOPS_REPO }}
+  GITOPS_VALUES_FILE: helm/wisebiz/values-prod.yaml
+  ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
+  ARGOCD_APP: wisebiz-prod
+  STAGING_URL: ${{ vars.STAGING_URL }}
+  PROD_URL: ${{ vars.PROD_URL }}
+
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
+jobs:
+
+  approval-gate:
+    name: Awaiting Production Approval
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production   # required-reviewer protection rule blocks until approved
+
+    steps:
+      - run: |
+          echo "Approved by: ${{ github.actor }}"
+          echo "Tag: ${{ github.event.inputs.image_tag }}"
+
+  verify-staging:
+    name: Verify Staging Health
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: approval-gate
+    if: github.event.inputs.skip_staging_check != 'true'
+
+    steps:
+      - name: Install ArgoCD CLI
+        run: |
+          ARGOCD_VERSION="v2.13.3"
+          curl -sSL -o /usr/local/bin/argocd \
+            "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64"
+          chmod +x /usr/local/bin/argocd
+          argocd version --client
+
+      - name: Login to ArgoCD
+        run: |
+          argocd login "${{ env.ARGOCD_SERVER }}" \
+            --auth-token "${{ secrets.ARGOCD_STAGING_TOKEN }}" \
+            --grpc-web --insecure
+
+      - name: Check staging is Healthy/Synced
+        run: |
+          STATUS=$(argocd app get wisebiz-staging --grpc-web -o json \
+            | jq -r '.status.health.status + "/" + .status.sync.status')
+          echo "Staging: ${STATUS}"
+          [ "$STATUS" = "Healthy/Synced" ] || { echo "Staging not healthy — aborting." >&2; exit 1; }
+
+      - name: HTTP health probe
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "${{ env.STAGING_URL }}/health" || echo "000")
+          echo "Staging /health → HTTP ${STATUS}"
+          [[ "$STATUS" == "200" || "$STATUS" == "204" ]] || { echo "Staging health probe failed." >&2; exit 1; }
+
+  verify-images:
+    name: Verify ECR Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: approval-gate
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check all 9 service images exist in ECR
+        env:
+          TAG: ${{ github.event.inputs.image_tag }}
+        run: |
+          SERVICES="api-gateway auth-svc user-svc product-svc cart-svc order-svc payment-svc notification-svc frontend-svc"
+          FAILED=0
+          for SVC in $SERVICES; do
+            aws ecr describe-images \
+              --repository-name "wisebiz/${SVC}" \
+              --image-ids imageTag="${TAG}" \
+              --region "${{ env.AWS_REGION }}" > /dev/null 2>&1 \
+              && echo "✓ wisebiz/${SVC}:${TAG}" \
+              || { echo "✗ wisebiz/${SVC}:${TAG} not found" >&2; FAILED=1; }
+          done
+          [ "$FAILED" -eq 0 ] || exit 1
+
+  create-release:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [verify-staging, verify-images]
+    if: |
+      always() &&
+      needs.verify-images.result == 'success' &&
+      (needs.verify-staging.result == 'success' || needs.verify-staging.result == 'skipped')
+    outputs:
+      release_tag: ${{ steps.tag.outputs.release_tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Generate and push release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="v$(date -u +%Y.%m.%d)-${{ github.event.inputs.image_tag }}"
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+
+          git config user.name  "wisebiz-cd[bot]"
+          git config user.email "wisebiz-cd[bot]@users.noreply.github.com"
+          git tag -a "$RELEASE_TAG" -m "Production release $RELEASE_TAG — ${{ github.event.inputs.release_notes }}"
+          git push origin "$RELEASE_TAG"
+
+          PREV=$(git tag --sort=-version:refname | grep -E '^v[0-9]{4}\.' | sed -n '2p' || true)
+          CHANGELOG=$( [ -n "$PREV" ] && git log "${PREV}..HEAD" --pretty=format:"- %s (%h)" --no-merges || echo "Initial production release." )
+
+          gh release create "$RELEASE_TAG" \
+            --title "WiseBiz $RELEASE_TAG" \
+            --verify-tag \
+            --notes "## Release Notes
+          ${{ github.event.inputs.release_notes }}
+
+          ## Changes
+          ${CHANGELOG}
+
+          ## Image Tag
+          \`${{ github.event.inputs.image_tag }}\`
+
+          **Deployed by:** ${{ github.actor }}"
+
+  update-gitops:
+    name: Update GitOps — Prod Values
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: create-release
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITOPS_REPO }}
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+
+      - name: Patch image tags in values-prod.yaml
+        env:
+          TAG: ${{ github.event.inputs.image_tag }}
+        run: |
+          cd gitops
+          for KEY in apiGateway authSvc userSvc productSvc cartSvc orderSvc paymentSvc notificationSvc frontendSvc; do
+            yq e ".images.${KEY} = \"${TAG}\"" -i "${{ env.GITOPS_VALUES_FILE }}"
+          done
+
+      - name: Commit and push
+        env:
+          RELEASE_TAG: ${{ needs.create-release.outputs.release_tag }}
+        run: |
+          cd gitops
+          git config user.name  "wisebiz-cd[bot]"
+          git config user.email "wisebiz-cd[bot]@users.noreply.github.com"
+          git add "${{ env.GITOPS_VALUES_FILE }}"
+          git diff --cached --quiet \
+            && echo "No changes — tag already set." \
+            || { git commit -m "chore(prod): deploy ${RELEASE_TAG} [skip ci]" && git push; }
+
+  argocd-sync:
+    name: ArgoCD Sync — Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: update-gitops
+
+    steps:
+      - name: Install ArgoCD CLI
+        run: |
+          ARGOCD_VERSION="v2.13.3"
+          curl -sSL -o /usr/local/bin/argocd \
+            "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64"
+          chmod +x /usr/local/bin/argocd
+          argocd version --client
+
+      - name: Login and sync
+        run: |
+          argocd login "${{ env.ARGOCD_SERVER }}" \
+            --auth-token "${{ secrets.ARGOCD_PROD_TOKEN }}" \
+            --grpc-web --insecure
+          argocd app sync "${{ env.ARGOCD_APP }}" --grpc-web --timeout 600 --strategy hook
+          argocd app wait "${{ env.ARGOCD_APP }}" --health --timeout 600 --grpc-web
+          echo "Production Healthy/Synced ✓"
+
+  post-deploy:
+    name: Post-Deploy Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [create-release, argocd-sync]
+    if: always()
+
+    steps:
+      - name: Health probe
+        id: health
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "${{ env.PROD_URL }}/health" || echo "000")
+          echo "http_status=${STATUS}" >> "$GITHUB_OUTPUT"
+          echo "Production /health → HTTP ${STATUS}"
+
+      - name: Fail on unhealthy
+        if: steps.health.outputs.http_status != '200' && steps.health.outputs.http_status != '204'
+        run: |
+          echo "Production health check failed (${{ steps.health.outputs.http_status }})" >&2
+          echo "Rollback: argocd app rollback ${{ env.ARGOCD_APP }} --grpc-web"
+          echo "Or revert the values-prod.yaml commit and re-sync."
+          exit 1
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "Release  : ${{ needs.create-release.outputs.release_tag }}"
+          echo "Image Tag: ${{ github.event.inputs.image_tag }}"
+          echo "Health   : ${{ steps.health.outputs.http_status }}"
+          echo "Actor    : ${{ github.actor }}"
+          echo "Time     : $(date -u +%Y-%m-%dT%H:%M:%SZ)"

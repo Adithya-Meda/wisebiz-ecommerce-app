@@ -1,0 +1,201 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title><%= title %></title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛍</text></svg>"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"/>
+<link rel="stylesheet" href="/css/main.css"/>
+<%- include('../partials/csrf-meta') %>
+</head><body>
+<%- include('../partials/navbar') %>
+<main class="main-content">
+<% if(locals.flash){%><div class="container" style="padding-top:16px;"><div class="alert alert-<%=flash.type%>"><%=flash.message%></div></div><%}%>
+
+<div class="section-sm" style="background:var(--white);">
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="/">Home</a><span class="breadcrumb-sep">/</span>
+      <a href="/products">Shop</a><span class="breadcrumb-sep">/</span>
+      <% if(product.category_id){ %><a href="/products?category=<%= product.category_id.slug %>"><%= product.category_id.name %></a><span class="breadcrumb-sep">/</span><%}%>
+      <span style="color:var(--dark);font-weight:500;"><%= product.name %></span>
+    </div>
+
+    <div class="grid-2" style="gap:48px;align-items:start;">
+      <!-- Image Gallery -->
+      <div>
+        <div id="mainImage" style="aspect-ratio:1;background:#f3f4f6;border-radius:var(--radius);overflow:hidden;margin-bottom:12px;">
+          <img id="mainImg" src="<%= product.images?.[0]?.url || 'https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?w=800' %>"
+            alt="<%= product.name %>" style="width:100%;height:100%;object-fit:cover;"/>
+        </div>
+        <% if(product.images?.length > 1){ %>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <% product.images.forEach((img,i)=>{ %>
+          <img src="<%= img.url %>" alt="<%= img.alt || product.name %>"
+            onclick="switchImage(this)"
+            style="width:72px;height:72px;border-radius:var(--radius-sm);object-fit:cover;cursor:pointer;border:2px solid <%=i===0?'var(--primary)':'var(--border)'%>;transition:border-color .2s;"
+          />
+          <%})%>
+        </div>
+        <%}%>
+      </div>
+
+      <!-- Product Info -->
+      <div id="productInfo">
+        <% if(product.brand){ %><div class="product-brand" style="font-size:.85rem;margin-bottom:8px;"><%= product.brand %></div><%}%>
+        <h1 style="font-size:1.75rem;margin-bottom:12px;"><%= product.name %></h1>
+
+        <% if(product.rating_count > 0){ %>
+        <div class="product-rating" style="margin-bottom:16px;">
+          <span class="stars" style="font-size:1rem;">
+            <% for(let i=1;i<=5;i++){%><%= i<=Math.round(product.rating_avg)?'★':'☆' %><%}%>
+          </span>
+          <span style="font-weight:600;color:var(--dark);margin-left:4px;"><%= product.rating_avg %></span>
+          <span style="color:var(--muted);font-size:.875rem;">(<%= product.rating_count %> reviews)</span>
+        </div>
+        <%}%>
+
+        <div class="product-price" style="margin-bottom:24px;align-items:baseline;">
+          <span style="font-size:2rem;font-weight:800;color:var(--dark);">₹<%= (product.sale_price || product.base_price).toLocaleString('en-IN') %></span>
+          <% if(product.discount_percent > 0){ %>
+          <span class="price-original" style="font-size:1.1rem;">₹<%= product.base_price.toLocaleString('en-IN') %></span>
+          <span class="price-badge" style="padding:4px 12px;font-size:.85rem;">Save <%= product.discount_percent %>%</span>
+          <%}%>
+        </div>
+
+        <% if(product.short_description){ %>
+        <p style="color:var(--muted);margin-bottom:24px;line-height:1.7;"><%= product.short_description %></p>
+        <%}%>
+
+        <div style="margin-bottom:24px;">
+          <div style="display:flex;align-items:center;gap:8px;font-size:.9rem;">
+            <% if(product.stock > 10){ %>
+            <span style="width:8px;height:8px;border-radius:50%;background:var(--success);display:inline-block;"></span>
+            <span style="color:var(--success);font-weight:600;">In Stock</span>
+            <% } else if(product.stock > 0){ %>
+            <span style="width:8px;height:8px;border-radius:50%;background:var(--warning);display:inline-block;"></span>
+            <span style="color:var(--warning);font-weight:600;">Only <%= product.stock %> left!</span>
+            <% } else { %>
+            <span style="width:8px;height:8px;border-radius:50%;background:var(--danger);display:inline-block;"></span>
+            <span style="color:var(--danger);font-weight:600;">Out of Stock</span>
+            <%}%>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:28px;">
+          <% if(product.stock > 0){ %>
+          <button id="atc-<%= product._id %>" class="add-to-cart-btn btn btn-primary btn-lg"
+            onclick="addToCart('<%= product._id %>','<%= product.name.replace(/'/g,&quot;\\\'&quot;) %>','<%= product.images?.[0]?.url||'' %>',<%= product.sale_price||product.base_price %>)">
+            🛒 Add to Cart
+          </button>
+          <%}%>
+          <a href="/checkout" class="btn btn-outline btn-lg">⚡ Buy Now</a>
+        </div>
+
+        <% if(product.attributes && [...product.attributes].length > 0){ %>
+        <div style="background:var(--bg);border-radius:var(--radius-sm);padding:16px;border:1px solid var(--border);">
+          <h4 style="font-size:.875rem;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);">Specifications</h4>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <% for(const [k,v] of product.attributes){ %>
+            <div style="font-size:.85rem;">
+              <span style="color:var(--muted);"><%=k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())%>:</span>
+              <span style="font-weight:600;margin-left:4px;color:var(--dark);"><%=v%></span>
+            </div>
+            <%}%>
+          </div>
+        </div>
+        <%}%>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Description & Reviews -->
+<section class="section-sm" style="background:var(--bg);">
+  <div class="container">
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:32px;align-items:start;">
+      <div>
+        <div style="border-bottom:1px solid var(--border);margin-bottom:24px;display:flex;gap:0;">
+          <button class="tab-btn-pd active" data-panel="desc" onclick="switchTab(this,'desc')" style="padding:12px 20px;border:none;border-bottom:3px solid var(--primary);font-weight:600;cursor:pointer;background:none;color:var(--primary);">Description</button>
+          <button class="tab-btn-pd" data-panel="reviews" onclick="switchTab(this,'reviews')" style="padding:12px 20px;border:none;border-bottom:3px solid transparent;font-weight:600;cursor:pointer;background:none;color:var(--muted);">Reviews (<%= product.reviews?.length || 0 %>)</button>
+        </div>
+
+        <div id="panel-desc"><p style="line-height:1.8;color:var(--text);white-space:pre-line;"><%= product.description %></p></div>
+        <div id="panel-reviews" style="display:none;">
+          <% if(product.reviews?.length){ %>
+            <% product.reviews.slice().reverse().slice(0,10).forEach(r=>{ %>
+            <div style="border-bottom:1px solid var(--border);padding:16px 0;">
+              <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                <strong style="font-size:.9rem;"><%= r.user_name || 'Customer' %></strong>
+                <span style="color:#f59e0b;"><% for(let i=1;i<=5;i++){%><%= i<=r.rating?'★':'☆' %><%}%></span>
+              </div>
+              <% if(r.title){ %><p style="font-weight:600;margin-bottom:4px;"><%= r.title %></p><%}%>
+              <p style="color:var(--muted);font-size:.875rem;"><%= r.body || '' %></p>
+              <span style="font-size:.75rem;color:var(--muted);margin-top:6px;display:block;"><%= new Date(r.createdAt).toLocaleDateString('en-IN',{year:'numeric',month:'short',day:'numeric'}) %></span>
+            </div>
+            <%})%>
+          <% } else { %>
+          <div style="text-align:center;padding:32px;color:var(--muted);">
+            <div style="font-size:2rem;margin-bottom:8px;">💬</div>
+            No reviews yet. Be the first!
+          </div>
+          <%}%>
+        </div>
+      </div>
+
+      <div class="card card-body" style="position:sticky;top:88px;">
+        <h4 style="margin-bottom:16px;">Quick Summary</h4>
+        <div style="display:flex;flex-direction:column;gap:10px;font-size:.875rem;">
+          <div class="flex-between"><span style="color:var(--muted);">Price</span><strong>₹<%= (product.sale_price||product.base_price).toLocaleString('en-IN') %></strong></div>
+          <% if(product.brand){ %><div class="flex-between"><span style="color:var(--muted);">Brand</span><strong><%= product.brand %></strong></div><%}%>
+          <% if(product.rating_count){ %><div class="flex-between"><span style="color:var(--muted);">Rating</span><strong><%= product.rating_avg %>/5</strong></div><%}%>
+          <% if(product.category_id){ %><div class="flex-between"><span style="color:var(--muted);">Category</span><strong><%= product.category_id.name %></strong></div><%}%>
+          <div class="flex-between"><span style="color:var(--muted);">Availability</span><strong style="color:<%= product.stock>0?'var(--success)':'var(--danger)' %>"><%= product.stock>0?'In Stock':'Out of Stock' %></strong></div>
+        </div>
+        <% if(product.stock > 0){ %>
+        <button class="btn btn-primary btn-full" style="margin-top:20px;" onclick="addToCart('<%= product._id %>','<%= product.name.replace(/'/g,&quot;\\\'&quot;) %>','<%= product.images?.[0]?.url||'' %>',<%= product.sale_price||product.base_price %>)">🛒 Add to Cart</button>
+        <%}%>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Related Products -->
+<% if(related.length){ %>
+<section class="section-sm" style="background:var(--white);">
+  <div class="container">
+    <div class="section-heading reveal"><span class="section-label">You May Also Like</span><h2>Related Products</h2></div>
+    <div class="grid-auto stagger-grid">
+      <% related.forEach(p=>{ %><%- include('../partials/product-card', { product: p }) %><%})%>
+    </div>
+  </div>
+</section>
+<%}%>
+
+</main>
+<%- include('../partials/footer') %>
+<div class="toast-container" id="toastContainer"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script src="/js/app.js"></script>
+<script>
+gsap.from('#productInfo > *', { opacity:0, y:24, stagger:.1, duration:.6, ease:'power3.out' });
+gsap.from('#mainImage', { opacity:0, scale:.96, duration:.7, ease:'power3.out' });
+
+function switchImage(el) {
+  const main = document.getElementById('mainImg');
+  if(main) { main.src = el.src; gsap.fromTo(main, {opacity:.5, scale:.97}, {opacity:1, scale:1, duration:.3}); }
+  document.querySelectorAll('[onclick="switchImage(this)"]').forEach(i => i.style.borderColor='var(--border)');
+  el.style.borderColor='var(--primary)';
+}
+
+function switchTab(btn, panel) {
+  document.querySelectorAll('.tab-btn-pd').forEach(b => {
+    b.style.borderBottomColor = 'transparent'; b.style.color = 'var(--muted)';
+  });
+  btn.style.borderBottomColor = 'var(--primary)'; btn.style.color = 'var(--primary)';
+  document.getElementById('panel-desc').style.display = panel==='desc' ? '' : 'none';
+  document.getElementById('panel-reviews').style.display = panel==='reviews' ? '' : 'none';
+  const active = document.getElementById('panel-'+panel);
+  if(active) gsap.fromTo(active, {opacity:0, y:10}, {opacity:1, y:0, duration:.3});
+}
+</script>
+</body></html>

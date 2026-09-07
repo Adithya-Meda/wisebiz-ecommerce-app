@@ -1,0 +1,209 @@
+name: CI — Build & Push
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "services/**"
+      - "compose.yml"
+      - ".github/workflows/ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+  workflow_dispatch:
+    inputs:
+      services:
+        description: "Comma-separated services or 'all'"
+        required: false
+        default: "all"
+      push_images:
+        description: "Push images to ECR?"
+        required: false
+        default: "true"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  NODE_VERSION: "22"
+
+jobs:
+
+  resolve-services:
+    name: Resolve Changed Services
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+      any_changed: ${{ steps.set.outputs.any_changed }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed services
+        id: set
+        run: |
+          ALL='["api-gateway","auth-svc","user-svc","product-svc","cart-svc","order-svc","payment-svc","notification-svc","frontend-svc"]'
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            INPUT="${{ github.event.inputs.services }}"
+            MATRIX=$( [ "$INPUT" = "all" ] && echo "$ALL" || echo "$INPUT" | tr ',' '\n' | jq -R . | jq -sc . )
+            echo "matrix={\"service\":${MATRIX}}" >> "$GITHUB_OUTPUT"
+            echo "any_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BASE=$( [ "${{ github.event_name }}" = "pull_request" ] && echo "${{ github.event.pull_request.base.sha }}" || echo "${{ github.event.before }}" )
+          CHANGED=$(git diff --name-only "$BASE" "${{ github.sha }}" | grep '^services/' | cut -d'/' -f2 | sort -u | jq -R . | jq -sc .)
+
+          if [ "$CHANGED" = "[]" ] || [ -z "$CHANGED" ]; then
+            echo "matrix={\"service\":${ALL}}" >> "$GITHUB_OUTPUT"
+            echo "any_changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix={\"service\":${CHANGED}}" >> "$GITHUB_OUTPUT"
+            echo "any_changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  lint:
+    name: Lint — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: resolve-services
+    if: needs.resolve-services.outputs.any_changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.resolve-services.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: services/${{ matrix.service }}/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+        working-directory: services/${{ matrix.service }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+
+      - name: ESLint
+        run: npx eslint src/ --max-warnings=0
+        working-directory: services/${{ matrix.service }}
+
+  trivy-scan:
+    name: Trivy Scan — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: resolve-services
+    if: needs.resolve-services.outputs.any_changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.resolve-services.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin v0.69.3
+
+      - name: Scan for CRITICAL/HIGH vulnerabilities
+        run: |
+          trivy fs \
+            --severity CRITICAL,HIGH \
+            --exit-code 1 \
+            --ignore-unfixed \
+            --format sarif \
+            --output trivy-${{ matrix.service }}.sarif \
+            services/${{ matrix.service }}
+
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif-${{ matrix.service }}
+          path: trivy-${{ matrix.service }}.sarif
+          retention-days: 30
+
+  build-push:
+    name: Build & Push — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [resolve-services, lint, trivy-scan]
+    if: needs.resolve-services.outputs.any_changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.resolve-services.outputs.matrix) }}
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ECR_REGISTRY }}/wisebiz/${{ matrix.service }}
+          tags: |
+            type=sha,prefix=,format=short
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          push: ${{ github.event_name == 'push' || github.event.inputs.push_images == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+          secrets: |
+            NODE_AUTH_TOKEN=${{ secrets.NODE_AUTH_TOKEN }}
+
+      - name: Trigger ECR image scan
+        if: github.event_name == 'push'
+        run: |
+          aws ecr start-image-scan \
+            --repository-name "wisebiz/${{ matrix.service }}" \
+            --image-id imageTag="${{ steps.meta.outputs.version }}" \
+            --region "${{ env.AWS_REGION }}" || true
+
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [build-push]
+    if: always()
+
+    steps:
+      - name: Check result
+        run: |
+          RESULT="${{ needs.build-push.result }}"
+          if [ "$RESULT" != "success" ] && [ "$RESULT" != "skipped" ]; then
+            echo "CI gate failed — build-push result: $RESULT" >&2
+            exit 1
+          fi
+          echo "CI gate passed ✓"

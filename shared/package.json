@@ -1,0 +1,13 @@
+{
+  "name": "@Adithya-Meda/wisebiz-shared",
+  "version": "1.0.1",
+  "description": "WiseBiz shared utilities — logger, errors, validation, storage",
+  "private": false,
+  "main": "index.js",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "dependencies": {
+    "multer": "2.2.0"
+  }
+}

@@ -1,0 +1,151 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title><%= title %></title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💳</text></svg>"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"/>
+<link rel="stylesheet" href="/css/main.css"/>
+</head><body>
+<%- include('partials/navbar') %>
+<main class="main-content">
+<div class="section-sm">
+  <div class="container-sm">
+    <div class="breadcrumb"><a href="/">Home</a><span class="breadcrumb-sep">/</span><a href="/cart">Cart</a><span class="breadcrumb-sep">/</span><a href="/checkout">Checkout</a><span class="breadcrumb-sep">/</span><span>Payment</span></div>
+    <h1 style="margin-bottom:8px;">Secure Payment</h1>
+    <p style="color:var(--muted);margin-bottom:32px;">Order <strong>#<%= order.order_number %></strong> · Total <strong>₹<%= parseFloat(order.total_amount).toLocaleString('en-IN') %></strong></p>
+
+    <% if(locals.error){ %><div class="alert alert-danger" style="margin-bottom:24px;">❌ <%= error %></div><%}%>
+
+    <div style="display:grid;grid-template-columns:1fr 300px;gap:32px;align-items:start;">
+      <form action="/checkout/payment/<%= order.id %>/pay" method="POST" id="paymentForm">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>"/>
+
+        <!-- Payment method tabs -->
+        <div class="card card-body" style="margin-bottom:24px;">
+          <h3 style="margin-bottom:20px;">Select Payment Method</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:24px;">
+            <label style="cursor:pointer;">
+              <input type="radio" name="payment_type" value="card" checked style="display:none;" />
+              <div class="method-card active" data-method="card" style="text-align:center;padding:14px 8px;border:2px solid var(--primary);border-radius:var(--radius-sm);background:rgba(99,102,241,.06);transition:var(--transition);">
+                <div style="font-size:1.5rem;">💳</div><div style="font-size:.75rem;font-weight:600;margin-top:4px;">Card</div>
+              </div>
+            </label>
+            <label style="cursor:pointer;">
+              <input type="radio" name="payment_type" value="upi" style="display:none;" />
+              <div class="method-card" data-method="upi" style="text-align:center;padding:14px 8px;border:2px solid var(--border);border-radius:var(--radius-sm);transition:var(--transition);">
+                <div style="font-size:1.5rem;">📱</div><div style="font-size:.75rem;font-weight:600;margin-top:4px;">UPI</div>
+              </div>
+            </label>
+            <label style="cursor:pointer;">
+              <input type="radio" name="payment_type" value="netbanking" style="display:none;" />
+              <div class="method-card" data-method="netbanking" style="text-align:center;padding:14px 8px;border:2px solid var(--border);border-radius:var(--radius-sm);transition:var(--transition);">
+                <div style="font-size:1.5rem;">🏦</div><div style="font-size:.75rem;font-weight:600;margin-top:4px;">Net Banking</div>
+              </div>
+            </label>
+            <label style="cursor:pointer;">
+              <input type="radio" name="payment_type" value="wallet" style="display:none;" />
+              <div class="method-card" data-method="wallet" style="text-align:center;padding:14px 8px;border:2px solid var(--border);border-radius:var(--radius-sm);transition:var(--transition);">
+                <div style="font-size:1.5rem;">👛</div><div style="font-size:.75rem;font-weight:600;margin-top:4px;">Wallet</div>
+              </div>
+            </label>
+          </div>
+
+          <!-- Card panel -->
+          <div id="panel-card" class="payment-panel active">
+            <div class="alert alert-info" style="margin-bottom:16px;font-size:.82rem;">
+              💡 <strong>Demo cards:</strong> Last 4 digits <code>0000</code>=Success, <code>1111</code>=Insufficient funds, <code>2222</code>=Declined, <code>3333</code>=Invalid CVV
+            </div>
+            <div class="form-row">
+              <div class="form-group" style="grid-column:1/-1;"><label class="form-label">Cardholder Name</label><input type="text" class="form-control" placeholder="Name on card" value="<%= locals.user?.first_name || '' %> <%= locals.user?.last_name || '' %>"/></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Card Number</label>
+              <input type="text" id="cardInput" class="form-control" placeholder="•••• •••• •••• ____" maxlength="19" oninput="formatCard(this)"/>
+            </div>
+            <input type="hidden" name="card_last4" id="cardLast4"/>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">Expiry</label><input type="text" class="form-control" placeholder="MM / YY" maxlength="7"/></div>
+              <div class="form-group"><label class="form-label">CVV</label><input type="password" class="form-control" placeholder="•••" maxlength="4"/></div>
+            </div>
+          </div>
+
+          <!-- UPI panel -->
+          <div id="panel-upi" class="payment-panel" style="display:none;">
+            <div class="form-group">
+              <label class="form-label">UPI ID</label>
+              <input type="text" name="upi_id" class="form-control" placeholder="yourname@upi"/>
+            </div>
+          </div>
+
+          <!-- Netbanking panel -->
+          <div id="panel-netbanking" class="payment-panel" style="display:none;">
+            <div class="alert alert-info" style="font-size:.82rem;">You will be redirected to your bank's secure portal to complete the payment.</div>
+          </div>
+
+          <!-- Wallet panel -->
+          <div id="panel-wallet" class="payment-panel" style="display:none;">
+            <div class="form-group">
+              <label class="form-label">Select Wallet</label>
+              <select name="wallet" class="form-control">
+                <option value="paytm">Paytm</option>
+                <option value="phonepe">PhonePe</option>
+                <option value="googlepay">Google Pay</option>
+                <option value="amazonpay">Amazon Pay</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" id="payBtn" class="btn btn-primary btn-lg btn-full">
+          🔒 Pay ₹<%= parseFloat(order.total_amount).toLocaleString('en-IN') %>
+        </button>
+      </form>
+
+      <div class="cart-summary">
+        <h4 style="margin-bottom:16px;">Order Summary</h4>
+        <div class="summary-row"><span>Subtotal</span><span>₹<%= parseFloat(order.subtotal).toLocaleString('en-IN') %></span></div>
+        <div class="summary-row"><span>Shipping</span><span><%=parseFloat(order.shipping_amount)===0?'FREE':'₹'+parseFloat(order.shipping_amount)%></span></div>
+        <div class="summary-row"><span>GST (18%)</span><span>₹<%= parseFloat(order.tax_amount).toFixed(2) %></span></div>
+        <div class="summary-row total"><span>Total</span><span style="color:var(--primary);font-size:1.25rem;">₹<%= parseFloat(order.total_amount).toLocaleString('en-IN') %></span></div>
+        <div style="margin-top:20px;display:flex;flex-direction:column;gap:8px;font-size:.8rem;color:var(--muted);">
+          <div>🔒 256-bit SSL encryption</div>
+          <div>🛡 PCI DSS compliant</div>
+          <div>💰 Instant refund on cancellation</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</main>
+<%- include('partials/footer') %>
+<div class="toast-container" id="toastContainer"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="/js/app.js"></script>
+<script>
+gsap.from('#paymentForm > *', { opacity:0, y:24, stagger:.1, duration:.5, ease:'power3.out' });
+
+// Method card switching
+document.querySelectorAll('[name="payment_type"]').forEach(input => {
+  input.closest('label').querySelector('.method-card').addEventListener('click', () => {
+    input.checked = true;
+    document.querySelectorAll('.method-card').forEach(c => { c.style.borderColor='var(--border)'; c.style.background=''; });
+    const card = input.closest('label').querySelector('.method-card');
+    card.style.borderColor='var(--primary)'; card.style.background='rgba(99,102,241,.06)';
+    document.querySelectorAll('.payment-panel').forEach(p => p.style.display='none');
+    const panel = document.getElementById('panel-'+input.value);
+    if(panel) { panel.style.display=''; gsap.fromTo(panel,{opacity:0,y:10},{opacity:1,y:0,duration:.3}); }
+  });
+});
+
+function formatCard(el) {
+  let v = el.value.replace(/\D/g,'').slice(0,16);
+  el.value = v.replace(/(.{4})/g,'$1 ').trim();
+  const last4 = v.slice(-4);
+  document.getElementById('cardLast4').value = last4;
+}
+
+document.getElementById('paymentForm').addEventListener('submit', function(e) {
+  const payBtn = document.getElementById('payBtn');
+  payBtn.disabled = true; payBtn.textContent = '⌛ Processing payment...';
+});
+</script>
+</body></html>

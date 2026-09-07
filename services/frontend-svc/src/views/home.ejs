@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title %></title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛍</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+  <link rel="stylesheet" href="/css/main.css" />
+  <%- include('partials/csrf-meta') %>
+</head>
+<body>
+<%- include('partials/navbar') %>
+<main class="main-content">
+<% if (locals.flash) { %><div class="container" style="padding-top:16px;"><div class="alert alert-<%= flash.type %>"><%= flash.message %></div></div><% } %>
+
+<!-- Hero -->
+<section class="hero" id="hero">
+  <div class="hero-particles" id="heroParticles"></div>
+  <div class="container">
+    <div class="hero-content">
+      <div class="hero-tag" id="heroTag">✨ New Arrivals This Week</div>
+      <h1 id="heroTitle">Shop Smart,<br/><span class="hero-gradient-text">Live Better.</span></h1>
+      <p id="heroDesc">Discover thousands of premium products across Electronics, Fashion, Home & Living and more — all delivered to your door.</p>
+      <div class="hero-actions" id="heroActions">
+        <a href="/products" class="btn btn-primary btn-lg">Shop Now →</a>
+        <a href="/products?featured=true" class="btn btn-lg" style="background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.25);">Featured Picks</a>
+      </div>
+      <div style="display:flex;gap:32px;margin-top:40px;" id="heroStats">
+        <div><div style="font-size:1.75rem;font-weight:800;color:#fff;">10K+</div><div style="font-size:.8rem;color:rgba(255,255,255,.5);">Products</div></div>
+        <div><div style="font-size:1.75rem;font-weight:800;color:#fff;">50K+</div><div style="font-size:.8rem;color:rgba(255,255,255,.5);">Happy Customers</div></div>
+        <div><div style="font-size:1.75rem;font-weight:800;color:#fff;">4.8★</div><div style="font-size:.8rem;color:rgba(255,255,255,.5);">Average Rating</div></div>
+      </div>
+    </div>
+    <div class="hero-float" id="heroFloat">
+      <div style="background:rgba(255,255,255,.06);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.12);border-radius:24px;padding:28px;box-shadow:0 32px 80px rgba(0,0,0,.4);">
+        <div style="display:flex;gap:12px;flex-direction:column;">
+          <% const showcaseItems = featured.slice(0,3); %>
+          <% showcaseItems.forEach(function(p){ %>
+          <div style="display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.06);border-radius:12px;padding:12px;">
+            <img src="<%= p.images[0]?.url || '' %>" alt="<%= p.name %>" style="width:48px;height:48px;border-radius:8px;object-fit:cover;" />
+            <div>
+              <div style="color:#fff;font-size:.8rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;"><%= p.name %></div>
+              <div style="color:var(--primary-light);font-size:.8rem;font-weight:700;">₹<%= p.sale_price || p.base_price %></div>
+            </div>
+          </div>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Categories -->
+<section class="section-sm" style="background:var(--white);">
+  <div class="container">
+    <div class="section-heading reveal" style="margin-bottom:24px;">
+      <span class="section-label">Browse by Category</span>
+      <h2>What Are You Looking For?</h2>
+    </div>
+    <div class="category-grid reveal">
+      <a href="/products" class="category-chip">🛍 All Products</a>
+      <% categories.forEach(function(cat){ %>
+      <a href="/products?category=<%= cat.slug %>" class="category-chip">
+        <%= cat.slug === 'electronics' ? '⚡' : cat.slug === 'fashion' ? '👗' : cat.slug === 'home-living' ? '🏠' : cat.slug === 'sports-fitness' ? '🏃' : cat.slug === 'books' ? '📚' : '✨' %>
+        <%= cat.name %>
+      </a>
+      <% }) %>
+    </div>
+  </div>
+</section>
+
+<!-- Featured Products -->
+<% if (featured.length) { %>
+<section class="section" style="background:var(--bg);">
+  <div class="container">
+    <div class="flex-between section-heading">
+      <div>
+        <span class="section-label">Featured</span>
+        <h2>Our Top Picks</h2>
+        <p>Handpicked products our customers love</p>
+      </div>
+      <a href="/products?featured=true" class="btn btn-outline" style="flex-shrink:0;">View All →</a>
+    </div>
+    <div class="grid-auto stagger-grid">
+      <% featured.forEach(function(p) { %>
+      <%- include('partials/product-card', { product: p }) %>
+      <% }) %>
+    </div>
+  </div>
+</section>
+<% } %>
+
+<!-- Banner CTA -->
+<section style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:80px 0;">
+  <div class="container" style="text-align:center;">
+    <div class="reveal">
+      <h2 style="color:#fff;margin-bottom:16px;">New Arrivals Every Week</h2>
+      <p style="color:rgba(255,255,255,.8);margin-bottom:32px;font-size:1.1rem;">Be the first to discover our latest additions across all categories.</p>
+      <a href="/products?new_arrival=true" class="btn btn-lg" style="background:#fff;color:var(--primary);border-color:#fff;">Explore New Arrivals →</a>
+    </div>
+  </div>
+</section>
+
+<!-- New Arrivals -->
+<% if (newArrivals.length) { %>
+<section class="section" style="background:var(--white);">
+  <div class="container">
+    <div class="flex-between section-heading">
+      <div>
+        <span class="section-label">New Arrivals</span>
+        <h2>Just In 🔥</h2>
+        <p>Fresh products added this week</p>
+      </div>
+      <a href="/products?new_arrival=true" class="btn btn-outline" style="flex-shrink:0;">View All →</a>
+    </div>
+    <div class="grid-auto stagger-grid">
+      <% newArrivals.forEach(function(p) { %>
+      <%- include('partials/product-card', { product: p }) %>
+      <% }) %>
+    </div>
+  </div>
+</section>
+<% } %>
+
+<!-- Trust section -->
+<section class="section-sm" style="background:var(--bg);border-top:1px solid var(--border);">
+  <div class="container">
+    <div class="grid-4 stagger-grid">
+      <div class="card card-body" style="text-align:center;">
+        <div style="font-size:2rem;margin-bottom:12px;">🚚</div>
+        <h4 style="margin-bottom:6px;">Free Delivery</h4>
+        <p style="color:var(--muted);font-size:.875rem;">On orders above ₹1,000</p>
+      </div>
+      <div class="card card-body" style="text-align:center;">
+        <div style="font-size:2rem;margin-bottom:12px;">🔄</div>
+        <h4 style="margin-bottom:6px;">Easy Returns</h4>
+        <p style="color:var(--muted);font-size:.875rem;">30-day hassle-free returns</p>
+      </div>
+      <div class="card card-body" style="text-align:center;">
+        <div style="font-size:2rem;margin-bottom:12px;">🔒</div>
+        <h4 style="margin-bottom:6px;">Secure Payments</h4>
+        <p style="color:var(--muted);font-size:.875rem;">SSL encrypted checkout</p>
+      </div>
+      <div class="card card-body" style="text-align:center;">
+        <div style="font-size:2rem;margin-bottom:12px;">💬</div>
+        <h4 style="margin-bottom:6px;">24/7 Support</h4>
+        <p style="color:var(--muted);font-size:.875rem;">We're always here to help</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+<%- include('partials/footer') %>
+<div class="toast-container" id="toastContainer"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script src="/js/app.js"></script>
+<script>
+gsap.registerPlugin(ScrollTrigger);
+// Hero entrance
+const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+tl.fromTo('#heroTag',     { opacity:0, y:20 }, { opacity:1, y:0, duration:.6 }, 0)
+  .fromTo('#heroTitle',   { opacity:0, y:40 }, { opacity:1, y:0, duration:.8 }, 0.15)
+  .fromTo('#heroDesc',    { opacity:0, y:30 }, { opacity:1, y:0, duration:.7 }, 0.35)
+  .fromTo('#heroActions', { opacity:0, y:24 }, { opacity:1, y:0, duration:.6 }, 0.5)
+  .fromTo('#heroStats > div', { opacity:0, y:20 }, { opacity:1, y:0, duration:.5, stagger:.1 }, 0.6)
+  .fromTo('#heroFloat',   { opacity:0, x:60, scale:.95 }, { opacity:1, x:0, scale:1, duration:1 }, 0.4);
+
+// Particle background
+(function() {
+  const canvas = document.createElement('canvas');
+  const pc = document.getElementById('heroParticles');
+  if (!pc) return;
+  pc.appendChild(canvas);
+  canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+  const ctx = canvas.getContext('2d');
+  let W, H, particles;
+  function resize() {
+    W = canvas.width  = pc.offsetWidth;
+    H = canvas.height = pc.offsetHeight;
+  }
+  function init() {
+    resize();
+    particles = Array.from({length:60}, () => ({
+      x: Math.random()*W, y: Math.random()*H,
+      r: Math.random()*2+.5, dx: (Math.random()-.5)*.4, dy: (Math.random()-.5)*.4,
+      a: Math.random()*.6+.1,
+    }));
+  }
+  function draw() {
+    ctx.clearRect(0,0,W,H);
+    particles.forEach(p => {
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle = `rgba(165,180,252,${p.a})`; ctx.fill();
+      p.x+=p.dx; p.y+=p.dy;
+      if(p.x<0||p.x>W) p.dx*=-1;
+      if(p.y<0||p.y>H) p.dy*=-1;
+    });
+    requestAnimationFrame(draw);
+  }
+  init(); draw();
+  window.addEventListener('resize', init);
+})();
+</script>
+</body>
+</html>

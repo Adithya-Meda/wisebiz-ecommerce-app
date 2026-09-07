@@ -1,0 +1,289 @@
+name: wisebiz
+
+services:
+
+  # ─────────────────────────────────────────
+  # Infrastructure
+  # ─────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: wisebiz-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - wisebiz-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo:
+    image: mongo:7
+    container_name: wisebiz-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: wisebiz_products
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - wisebiz-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: wisebiz-redis
+    restart: unless-stopped
+    command: >
+      sh -c "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-server --requirepass $$REDIS_PASSWORD; else redis-server; fi"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    volumes:
+      - redis-data:/data
+    networks:
+      - wisebiz-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: wisebiz-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - wisebiz-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # Application Services
+  # ─────────────────────────────────────────
+
+  auth-svc:
+    build:
+      context: .
+      dockerfile: services/auth-svc/Dockerfile
+      secrets:
+        - NODE_AUTH_TOKEN
+    container_name: wisebiz-auth
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      AUTH_SVC_URL: http://auth-svc:3001
+    networks:
+      - wisebiz-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  user-svc:
+    build:
+      context: .
+      dockerfile: services/user-svc/Dockerfile
+      secrets:
+        - NODE_AUTH_TOKEN
+    container_name: wisebiz-user
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      USER_SVC_URL: http://user-svc:3002
+    networks:
+      - wisebiz-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  product-svc:
+    build:
+      context: .
+      dockerfile: services/product-svc/Dockerfile
+      secrets:
+        - NODE_AUTH_TOKEN
+    container_name: wisebiz-product
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MONGO_URI: mongodb://mongo:27017/wisebiz_products
+      PRODUCT_SVC_URL: http://product-svc:3003
+    networks:
+      - wisebiz-net
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  cart-svc:
+    build:
+      context: .
+      dockerfile: services/cart-svc/Dockerfile
+      secrets:
+        - NODE_AUTH_TOKEN
+    container_name: wisebiz-cart
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+      CART_SVC_URL: http://cart-svc:3004
+    networks:
+      - wisebiz-net
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  order-svc:
+    build:
+      context: .
+      dockerfile: services/order-svc/Dockerfile
+      secrets:
+        - NODE_AUTH_TOKEN
+    container_name: wisebiz-order
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      CART_SVC_URL: http://cart-svc:3004
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672
+      ORDER_SVC_URL: http://order-svc:3005
+    networks:
+      - wisebiz-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cart-svc:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+  payment-svc:
+    build:
+      context: .
+      dockerfile: services/payment-svc/Dockerfile
+      secrets:
+        - NODE_AUTH_TOKEN
+    container_name: wisebiz-payment
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      ORDER_SVC_URL: http://order-svc:3005
+      CART_SVC_URL: http://cart-svc:3004
+      PAYMENT_SVC_URL: http://payment-svc:3006
+    networks:
+      - wisebiz-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      order-svc:
+        condition: service_started
+
+  notification-svc:
+    build:
+      context: .
+      dockerfile: services/notification-svc/Dockerfile
+      secrets:
+        - NODE_AUTH_TOKEN
+    container_name: wisebiz-notification
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672
+    networks:
+      - wisebiz-net
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+      secrets:
+        - NODE_AUTH_TOKEN
+    container_name: wisebiz-gateway
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AUTH_SVC_URL: http://auth-svc:3001
+      USER_SVC_URL: http://user-svc:3002
+      PRODUCT_SVC_URL: http://product-svc:3003
+      CART_SVC_URL: http://cart-svc:3004
+      ORDER_SVC_URL: http://order-svc:3005
+      PAYMENT_SVC_URL: http://payment-svc:3006
+      NOTIFICATION_SVC_URL: http://notification-svc:3007
+    ports:
+      - "${GATEWAY_PORT:-3000}:3000"
+    networks:
+      - wisebiz-net
+    depends_on:
+      - auth-svc
+      - user-svc
+      - product-svc
+      - cart-svc
+      - order-svc
+      - payment-svc
+      - notification-svc
+
+  frontend-svc:
+    build:
+      context: .
+      dockerfile: services/frontend-svc/Dockerfile
+      secrets:
+        - NODE_AUTH_TOKEN
+    container_name: wisebiz-frontend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      GATEWAY_URL: http://api-gateway:3000
+    ports:
+      - "${FRONTEND_SVC_PORT:-8080}:8080"
+    networks:
+      - wisebiz-net
+    depends_on:
+      - api-gateway
+
+# ─────────────────────────────────────────
+# Volumes
+# ─────────────────────────────────────────
+
+volumes:
+  postgres-data:
+  mongo-data:
+  redis-data:
+  rabbitmq-data:
+
+# ─────────────────────────────────────────
+# Networks
+# ─────────────────────────────────────────
+
+networks:
+  wisebiz-net:
+    driver: bridge
+
+# ─────────────────────────────────────────
+# Build Secrets
+# ─────────────────────────────────────────
+
+secrets:
+  NODE_AUTH_TOKEN:
+    file: ${NPM_TOKEN_FILE}  # must be set before running docker compose build — no fallback to avoid silent failures

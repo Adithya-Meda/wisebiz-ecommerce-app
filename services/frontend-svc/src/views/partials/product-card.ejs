@@ -1,0 +1,45 @@
+<div class="card product-card">
+  <% if (product.is_new_arrival) { %><span class="product-badge badge-new">New</span><% } %>
+  <% if (product.discount_percent > 0) { %><span class="product-badge badge-sale" style="left:auto;right:12px;">-<%= product.discount_percent %>%</span><% } %>
+
+  <a href="/products/<%= product.slug %>">
+    <div class="product-card-image">
+      <img
+        src="<%= product.images?.[0]?.url || 'https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?w=400' %>"
+        alt="<%= product.name %>"
+        loading="lazy"
+      />
+      <div class="product-card-actions">
+        <button
+          class="btn btn-primary btn-sm"
+          onclick="event.preventDefault();addToCart('<%= product._id %>','<%= product.name.replace(/'/g, "\\'") %>','<%= product.images?.[0]?.url || "" %>',<%= product.sale_price || product.base_price %>)"
+        >🛒 Add to Cart</button>
+        <a href="/products/<%= product.slug %>" class="btn btn-outline btn-sm" style="background:rgba(255,255,255,.9);">View</a>
+      </div>
+    </div>
+  </a>
+
+  <div class="product-card-body">
+    <div class="product-brand"><%= product.brand || 'WiseBiz' %></div>
+    <a href="/products/<%= product.slug %>">
+      <div class="product-name"><%= product.name %></div>
+    </a>
+
+    <% if (product.rating_count > 0) { %>
+    <div class="product-rating">
+      <span class="stars">
+        <% for(let i=1;i<=5;i++) { %><%= i <= Math.round(product.rating_avg) ? '★' : '☆' %><% } %>
+      </span>
+      <span class="rating-count">(<%= product.rating_count %>)</span>
+    </div>
+    <% } %>
+
+    <div class="product-price">
+      <span class="price-sale">₹<%= (product.sale_price || product.base_price).toLocaleString('en-IN') %></span>
+      <% if (product.discount_percent > 0) { %>
+        <span class="price-original">₹<%= product.base_price.toLocaleString('en-IN') %></span>
+        <span class="price-badge">-<%= product.discount_percent %>%</span>
+      <% } %>
+    </div>
+  </div>
+</div>

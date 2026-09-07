@@ -1,0 +1,27 @@
+# EditorConfig — https://editorconfig.org
+# Ensures consistent formatting across all editors and IDEs.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.{js,cjs,mjs}]
+indent_size = 2
+
+[*.json]
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

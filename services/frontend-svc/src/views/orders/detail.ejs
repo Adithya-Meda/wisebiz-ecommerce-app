@@ -1,0 +1,105 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title><%= title %></title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"/>
+<link rel="stylesheet" href="/css/main.css"/>
+</head><body>
+<%- include('../partials/navbar') %>
+<main class="main-content">
+<% if(locals.flash){%><div class="container" style="padding-top:16px;"><div class="alert alert-<%=flash.type%>"><%=flash.message%></div></div><%}%>
+
+<div class="section-sm">
+  <div class="container">
+    <div class="breadcrumb"><a href="/">Home</a><span class="breadcrumb-sep">/</span><a href="/orders">My Orders</a><span class="breadcrumb-sep">/</span><span><%= order.order_number %></span></div>
+
+    <div class="flex-between" style="margin-bottom:28px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <h1 style="font-size:1.5rem;margin-bottom:4px;">Order <span style="font-family:monospace;color:var(--primary);"><%= order.order_number %></span></h1>
+        <p style="color:var(--muted);font-size:.875rem;">Placed <%= new Date(order.created_at).toLocaleDateString('en-IN',{weekday:'long',year:'numeric',month:'long',day:'numeric'}) %></p>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span class="status-badge status-<%= order.status %>" style="font-size:.85rem;padding:6px 16px;">
+          <%= order.status.charAt(0).toUpperCase()+order.status.slice(1) %>
+        </span>
+        <% if(['pending','confirmed'].includes(order.status)){ %>
+        <form action="/orders/<%= order.id %>/cancel" method="POST" onsubmit="return confirm('Cancel this order?')">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>"/>
+          <button type="submit" class="btn btn-danger btn-sm">Cancel Order</button>
+        </form>
+        <%}%>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 340px;gap:28px;align-items:start;">
+      <div style="display:flex;flex-direction:column;gap:20px;">
+        <!-- Items -->
+        <div class="card">
+          <div class="card-body" style="padding-bottom:8px;">
+            <h3 style="margin-bottom:16px;">Items (<%= order.items.length %>)</h3>
+          </div>
+          <% order.items.forEach(item=>{ %>
+          <div style="display:flex;align-items:center;gap:16px;padding:16px 24px;border-top:1px solid var(--border);">
+            <img src="<%= item.product_image || 'https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?w=100' %>" alt="<%= item.product_name %>" style="width:64px;height:64px;border-radius:var(--radius-sm);object-fit:cover;border:1px solid var(--border);"/>
+            <div style="flex:1;">
+              <div style="font-weight:600;margin-bottom:2px;"><%= item.product_name %></div>
+              <% if(item.variant){let v=typeof item.variant==='string'?JSON.parse(item.variant):item.variant; %><div style="font-size:.78rem;color:var(--muted);"><%= v.name %>: <%= v.value %></div><%}%>
+              <div style="font-size:.875rem;color:var(--muted);margin-top:4px;">₹<%= parseFloat(item.unit_price).toLocaleString('en-IN') %> × <%= item.quantity %></div>
+            </div>
+            <div style="font-weight:700;color:var(--dark);">₹<%= parseFloat(item.line_total).toLocaleString('en-IN') %></div>
+          </div>
+          <%})%>
+        </div>
+
+        <!-- Status Timeline -->
+        <% if(history.length){ %>
+        <div class="card card-body">
+          <h3 style="margin-bottom:20px;">Order Timeline</h3>
+          <div class="timeline">
+            <% history.slice().reverse().forEach((h,i)=>{ %>
+            <div class="timeline-item">
+              <div class="timeline-dot <%= i===0?'active':'' %>"></div>
+              <div class="timeline-time"><%= new Date(h.created_at).toLocaleString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) %></div>
+              <div class="timeline-label"><%= h.to_status.charAt(0).toUpperCase()+h.to_status.slice(1) %></div>
+              <% if(h.note){ %><div class="timeline-note"><%= h.note %></div><%}%>
+            </div>
+            <%})%>
+          </div>
+        </div>
+        <%}%>
+      </div>
+
+      <!-- Summary sidebar -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="card card-body">
+          <h4 style="margin-bottom:16px;">Order Summary</h4>
+          <div class="summary-row"><span>Subtotal</span><span>₹<%= parseFloat(order.subtotal).toLocaleString('en-IN') %></span></div>
+          <div class="summary-row"><span>Shipping</span><span><%=parseFloat(order.shipping_amount)===0?'FREE':'₹'+parseFloat(order.shipping_amount)%></span></div>
+          <div class="summary-row"><span>GST</span><span>₹<%= parseFloat(order.tax_amount).toFixed(2) %></span></div>
+          <div class="summary-row total"><span>Total</span><span style="color:var(--primary);">₹<%= parseFloat(order.total_amount).toLocaleString('en-IN') %></span></div>
+        </div>
+
+        <div class="card card-body">
+          <h4 style="margin-bottom:12px;">Shipping Address</h4>
+          <% const addr = typeof order.shipping_address==='string'?JSON.parse(order.shipping_address):order.shipping_address; %>
+          <address style="font-style:normal;font-size:.875rem;line-height:1.7;color:var(--text);">
+            <strong><%= addr.full_name %></strong><br/>
+            <%= addr.line1 %><% if(addr.line2){%>, <%= addr.line2 %><%}%><br/>
+            <%= addr.city %>, <%= addr.state %> <%= addr.postal_code %><br/>
+            <%= addr.country || 'India' %>
+            <% if(addr.phone){%><br/>📞 <%= addr.phone %><%}%>
+          </address>
+        </div>
+
+        <a href="/orders" class="btn btn-outline btn-full">← Back to Orders</a>
+      </div>
+    </div>
+  </div>
+</div>
+</main>
+<%- include('../partials/footer') %>
+<div class="toast-container" id="toastContainer"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="/js/app.js"></script>
+<script>gsap.from('.card',{opacity:0,y:20,stagger:.08,duration:.5,ease:'power3.out'});</script>
+</body></html>

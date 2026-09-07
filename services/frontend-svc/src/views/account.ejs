@@ -1,0 +1,130 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title><%= title %></title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👤</text></svg>"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"/>
+<link rel="stylesheet" href="/css/main.css"/>
+<%- include('partials/csrf-meta') %>
+</head><body>
+<%- include('partials/navbar') %>
+<main class="main-content">
+<% if(locals.flash){%><div class="container" style="padding-top:16px;"><div class="alert alert-<%=flash.type%>"><%=flash.message%></div></div><%}%>
+
+<div class="section-sm">
+  <div class="container">
+    <h1 style="margin-bottom:32px;">My Account</h1>
+
+    <% if(locals.success){%><div class="alert alert-success" style="margin-bottom:24px;">✅ <%=success%></div><%}%>
+    <% if(locals.error){%><div class="alert alert-danger" style="margin-bottom:24px;">❌ <%=error%></div><%}%>
+
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:28px;align-items:start;">
+      <!-- Sidebar nav -->
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <button class="acct-tab active" data-panel="profile" onclick="switchAcct(this,'profile')" style="text-align:left;padding:10px 14px;border-radius:var(--radius-sm);border:none;cursor:pointer;font-weight:600;font-size:.875rem;background:rgba(99,102,241,.08);color:var(--primary);">👤 Profile</button>
+        <button class="acct-tab" data-panel="addresses" onclick="switchAcct(this,'addresses')" style="text-align:left;padding:10px 14px;border-radius:var(--radius-sm);border:none;cursor:pointer;font-weight:600;font-size:.875rem;background:none;color:var(--text);">📍 Addresses</button>
+        <button class="acct-tab" data-panel="wishlist" onclick="switchAcct(this,'wishlist')" style="text-align:left;padding:10px 14px;border-radius:var(--radius-sm);border:none;cursor:pointer;font-weight:600;font-size:.875rem;background:none;color:var(--text);">❤️ Wishlist</button>
+        <hr style="border:none;border-top:1px solid var(--border);margin:8px 0;"/>
+        <a href="/orders" style="display:block;padding:10px 14px;border-radius:var(--radius-sm);font-weight:600;font-size:.875rem;color:var(--text);">📦 My Orders</a>
+        <form action="/auth/logout" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>"/>
+          <button type="submit" style="text-align:left;padding:10px 14px;border-radius:var(--radius-sm);border:none;cursor:pointer;font-weight:600;font-size:.875rem;color:var(--danger);background:none;width:100%;">🚪 Sign Out</button>
+        </form>
+      </div>
+
+      <!-- Content panels -->
+      <div>
+        <!-- Profile -->
+        <div id="panel-profile" class="acct-panel">
+          <div class="card card-body">
+            <h3 style="margin-bottom:24px;">Profile Information</h3>
+            <form action="/account/profile" method="POST">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>"/>
+              <div class="form-row">
+                <div class="form-group"><label class="form-label">First Name</label><input type="text" name="first_name" class="form-control" value="<%=profile.first_name||''%>"/></div>
+                <div class="form-group"><label class="form-label">Last Name</label><input type="text" name="last_name" class="form-control" value="<%=profile.last_name||''%>"/></div>
+              </div>
+              <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-control" value="<%=profile.email||''%>" disabled style="background:var(--bg);color:var(--muted);"/></div>
+              <div class="form-row">
+                <div class="form-group"><label class="form-label">Phone</label><input type="text" name="phone" class="form-control" value="<%=profile.phone||''%>" placeholder="+91 98765 43210"/></div>
+                <div class="form-group"><label class="form-label">Gender</label>
+                  <select name="gender" class="form-control">
+                    <option value="">Prefer not to say</option>
+                    <option value="male" <%=profile.gender==='male'?'selected':''%>>Male</option>
+                    <option value="female" <%=profile.gender==='female'?'selected':''%>>Female</option>
+                    <option value="non-binary" <%=profile.gender==='non-binary'?'selected':''%>>Non-binary</option>
+                  </select>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary">Save Changes</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Addresses -->
+        <div id="panel-addresses" class="acct-panel" style="display:none;">
+          <div class="card card-body">
+            <div class="flex-between" style="margin-bottom:20px;"><h3>Saved Addresses</h3><a href="/account" class="btn btn-primary btn-sm">+ Add Address</a></div>
+            <% if(!addresses.length){ %>
+            <div style="text-align:center;padding:32px;color:var(--muted);">
+              <div style="font-size:2rem;margin-bottom:8px;">📍</div>No saved addresses yet.
+            </div>
+            <% } else { %>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <% addresses.forEach(a=>{ %>
+              <div style="padding:16px;border:1.5px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                  <div style="font-weight:600;margin-bottom:2px;"><%= a.full_name %> <% if(a.is_default){%><span style="background:var(--primary);color:#fff;font-size:.65rem;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:4px;">Default</span><%}%></div>
+                  <div style="font-size:.875rem;color:var(--muted);line-height:1.6;"><%= a.line1 %><% if(a.line2){%>, <%=a.line2%><%}%><br/><%= a.city %>, <%= a.state %> <%= a.postal_code %></div>
+                </div>
+              </div>
+              <%})%>
+            </div>
+            <%}%>
+          </div>
+        </div>
+
+        <!-- Wishlist -->
+        <div id="panel-wishlist" class="acct-panel" style="display:none;">
+          <% if(!wishlist.length){ %>
+          <div style="text-align:center;padding:80px;background:var(--white);border-radius:var(--radius);box-shadow:var(--card-shadow);">
+            <div style="font-size:3rem;margin-bottom:12px;">❤️</div>
+            <h3 style="margin-bottom:8px;">Your wishlist is empty</h3>
+            <p style="color:var(--muted);margin-bottom:20px;">Save products you love by clicking the heart icon.</p>
+            <a href="/products" class="btn btn-primary">Browse Products</a>
+          </div>
+          <% } else { %>
+          <div class="grid-auto">
+            <% wishlist.forEach(item=>{ %>
+            <div class="card product-card">
+              <div class="product-card-image">
+                <img src="<%= item.product_image || 'https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?w=400' %>" alt="<%= item.product_name %>" loading="lazy"/>
+              </div>
+              <div class="product-card-body">
+                <div class="product-name"><%= item.product_name %></div>
+                <% if(item.product_price){ %><div class="product-price"><span class="price-sale">₹<%= parseFloat(item.product_price).toLocaleString('en-IN') %></span></div><%}%>
+                <button class="btn btn-primary btn-full btn-sm" style="margin-top:12px;" onclick="addToCart('<%= item.product_id %>','<%= item.product_name.replace(/'/g,&quot;\\\'&quot;) %>','<%= item.product_image||'' %>',<%= item.product_price||0 %>)">🛒 Add to Cart</button>
+              </div>
+            </div>
+            <%})%>
+          </div>
+          <%}%>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</main>
+<%- include('partials/footer') %>
+<div class="toast-container" id="toastContainer"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="/js/app.js"></script>
+<script>
+function switchAcct(btn, panel) {
+  document.querySelectorAll('.acct-tab').forEach(b=>{b.style.background='none';b.style.color='var(--text)';});
+  btn.style.background='rgba(99,102,241,.08)'; btn.style.color='var(--primary)';
+  document.querySelectorAll('.acct-panel').forEach(p=>p.style.display='none');
+  const el=document.getElementById('panel-'+panel);
+  if(el){el.style.display='';gsap.fromTo(el,{opacity:0,y:10},{opacity:1,y:0,duration:.3});}
+}
+</script>
+</body></html>

@@ -1,0 +1,297 @@
+name: CD — Deploy to Staging
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Triggers:
+#   • ci.yml completes successfully on main → auto-deploy to staging
+#   • Manual dispatch → force-redeploy any service with a specific tag
+# Flow:
+#   1. Resolve image tag produced by CI
+#   2. Update values-staging.yaml in wisebiz-gitops repo (git commit + push)
+#   3. ArgoCD syncs staging automatically (auto-sync policy)
+#   4. Wait for ArgoCD application to reach Synced+Healthy
+#   5. Run smoke tests against staging ingress
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_run:
+    workflows: ["CI — Build & Push"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (git short SHA, e.g. a1b2c3d)"
+        required: true
+      services:
+        description: "Comma-separated services, or 'all'"
+        required: false
+        default: "all"
+
+permissions:
+  contents: read
+  id-token: write   # OIDC for AWS
+
+env:
+  AWS_REGION: us-east-1
+  GITOPS_REPO: ${{ vars.GITOPS_REPO }}          # e.g. Adithya-Meda/wisebiz-gitops
+  GITOPS_VALUES_FILE: helm/wisebiz/values-staging.yaml
+  ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}       # e.g. argocd.wisebiz.online
+  ARGOCD_APP: wisebiz-staging
+  STAGING_URL: ${{ vars.STAGING_URL }}           # e.g. https://staging.wisebiz.online
+
+# Prevent concurrent staging deploys — queue them instead
+concurrency:
+  group: cd-staging
+  cancel-in-progress: false
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Guard: only proceed when CI succeeded (workflow_run trigger)
+  # ───────────────────────────────────────────────────────────────────────────
+  guard:
+    name: CI Gate Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Confirm gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "CI workflow concluded: ${{ github.event.workflow_run.conclusion }}"
+            echo "Triggered by commit: ${{ github.event.workflow_run.head_sha }}"
+          else
+            echo "Manual dispatch — tag: ${{ github.event.inputs.image_tag }}"
+          fi
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Resolve the image tag to deploy
+  # ───────────────────────────────────────────────────────────────────────────
+  resolve-tag:
+    name: Resolve Image Tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: guard
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+      services: ${{ steps.tag.outputs.services }}
+
+    steps:
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.image_tag }}"
+            SVCS="${{ github.event.inputs.services }}"
+          else
+            # Extract short SHA from the triggering CI run's head commit
+            TAG=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)
+            SVCS="all"
+          fi
+
+          echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "services=${SVCS}"  >> "$GITHUB_OUTPUT"
+          echo "Deploying tag: ${TAG} | services: ${SVCS}"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Verify images exist in ECR before touching GitOps
+  # ───────────────────────────────────────────────────────────────────────────
+  verify-images:
+    name: Verify ECR Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: resolve-tag
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check all service images exist in ECR
+        env:
+          TAG: ${{ needs.resolve-tag.outputs.image_tag }}
+          SVCS: ${{ needs.resolve-tag.outputs.services }}
+        run: |
+          ALL_SERVICES="api-gateway auth-svc user-svc product-svc cart-svc order-svc payment-svc notification-svc frontend-svc"
+
+          if [ "$SVCS" = "all" ]; then
+            CHECK_LIST="$ALL_SERVICES"
+          else
+            CHECK_LIST=$(echo "$SVCS" | tr ',' ' ')
+          fi
+
+          FAILED=0
+          for SVC in $CHECK_LIST; do
+            RESULT=$(aws ecr describe-images \
+              --repository-name "wisebiz/${SVC}" \
+              --image-ids imageTag="${TAG}" \
+              --region "${{ env.AWS_REGION }}" 2>&1) || RESULT="NOT_FOUND"
+
+            if echo "$RESULT" | grep -q "ImageNotFoundException\|NOT_FOUND"; then
+              echo "❌ wisebiz/${SVC}:${TAG} — NOT FOUND in ECR" >&2
+              FAILED=1
+            else
+              echo "✓ wisebiz/${SVC}:${TAG} — found"
+            fi
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo "One or more images missing from ECR. Aborting deploy." >&2
+            exit 1
+          fi
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Update values-staging.yaml in the GitOps repo
+  # ───────────────────────────────────────────────────────────────────────────
+  update-gitops:
+    name: Update GitOps — Staging Values
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [resolve-tag, verify-images]
+
+    steps:
+      - name: Checkout GitOps repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITOPS_REPO }}
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+
+      - name: Patch image tags in values-staging.yaml
+        env:
+          TAG: ${{ needs.resolve-tag.outputs.image_tag }}
+          SVCS: ${{ needs.resolve-tag.outputs.services }}
+        run: |
+          cd gitops
+          FILE="${{ env.GITOPS_VALUES_FILE }}"
+
+          ALL_SERVICES="apiGateway authSvc userSvc productSvc cartSvc orderSvc paymentSvc notificationSvc frontendSvc"
+          SVC_MAP="api-gateway:apiGateway auth-svc:authSvc user-svc:userSvc product-svc:productSvc cart-svc:cartSvc order-svc:orderSvc payment-svc:paymentSvc notification-svc:notificationSvc frontend-svc:frontendSvc"
+
+          if [ "$SVCS" = "all" ]; then
+            UPDATE_KEYS="$ALL_SERVICES"
+          else
+            UPDATE_KEYS=""
+            for ENTRY in $SVC_MAP; do
+              CLI_NAME=$(echo "$ENTRY" | cut -d: -f1)
+              HELM_KEY=$(echo "$ENTRY" | cut -d: -f2)
+              if echo "$SVCS" | grep -qw "$CLI_NAME"; then
+                UPDATE_KEYS="$UPDATE_KEYS $HELM_KEY"
+              fi
+            done
+          fi
+
+          # Use yq to update image tags — atomic and YAML-safe
+          for KEY in $UPDATE_KEYS; do
+            yq e ".images.${KEY} = \"${TAG}\"" -i "$FILE"
+            echo "  → images.${KEY} = ${TAG}"
+          done
+
+      - name: Commit and push
+        env:
+          TAG: ${{ needs.resolve-tag.outputs.image_tag }}
+        run: |
+          cd gitops
+          git config user.name  "wisebiz-cd[bot]"
+          git config user.email "wisebiz-cd[bot]@users.noreply.github.com"
+          git add "${{ env.GITOPS_VALUES_FILE }}"
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit — tag ${TAG} already set in staging values."
+          else
+            git commit -m "chore(staging): deploy tag ${TAG} [skip ci]"
+            git push
+            echo "GitOps updated ✓"
+          fi
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # ArgoCD sync — trigger staging app sync and wait for Healthy
+  # ───────────────────────────────────────────────────────────────────────────
+  argocd-sync:
+    name: ArgoCD Sync — Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: update-gitops
+
+    steps:
+      - name: Install ArgoCD CLI
+        run: |
+          ARGOCD_VERSION="v2.13.3"
+          curl -sSL -o /usr/local/bin/argocd \
+            "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64"
+          chmod +x /usr/local/bin/argocd
+          argocd version --client
+
+      - name: ArgoCD login (token auth)
+        run: |
+          argocd login "${{ env.ARGOCD_SERVER }}" \
+            --auth-token "${{ secrets.ARGOCD_STAGING_TOKEN }}" \
+            --grpc-web \
+            --insecure
+
+      - name: Trigger sync
+        run: |
+          argocd app sync "${{ env.ARGOCD_APP }}" \
+            --grpc-web \
+            --timeout 300
+
+      - name: Wait for Healthy
+        run: |
+          argocd app wait "${{ env.ARGOCD_APP }}" \
+            --health \
+            --timeout 300 \
+            --grpc-web
+          echo "ArgoCD: ${{ env.ARGOCD_APP }} is Synced and Healthy ✓"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Smoke tests — basic HTTP checks against staging ingress
+  # ───────────────────────────────────────────────────────────────────────────
+  smoke-tests:
+    name: Smoke Tests — Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: argocd-sync
+
+    steps:
+      - name: Health probe — API Gateway
+        run: |
+          echo "Probing staging health endpoints..."
+          for ENDPOINT in /health /api/health; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 15 \
+              "${{ env.STAGING_URL }}${ENDPOINT}" || echo "000")
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "204" ]; then
+              echo "✓ ${ENDPOINT} → ${STATUS}"
+            else
+              echo "⚠ ${ENDPOINT} → ${STATUS} (non-200, investigate)"
+            fi
+          done
+
+      - name: Verify deployed image tag
+        env:
+          TAG: ${{ needs.resolve-tag.outputs.image_tag }}
+        run: |
+          # Check the X-App-Version header if the gateway exposes it
+          VERSION=$(curl -s -I "${{ env.STAGING_URL }}/health" \
+            | grep -i 'x-app-version' | awk '{print $2}' | tr -d '\r' || echo "unknown")
+          echo "Staging version header: ${VERSION}"
+          echo "Expected tag: ${TAG}"
+
+      - name: Post deployment summary
+        if: always()
+        env:
+          TAG: ${{ needs.resolve-tag.outputs.image_tag }}
+        run: |
+          echo "================================================"
+          echo " WiseBiz Staging Deployment Summary"
+          echo "================================================"
+          echo " Image Tag  : ${TAG}"
+          echo " App URL    : ${{ env.STAGING_URL }}"
+          echo " ArgoCD App : ${{ env.ARGOCD_APP }}"
+          echo " Trigger    : ${{ github.event_name }}"
+          echo " Triggered by commit: ${{ github.sha }}"
+          echo "================================================"

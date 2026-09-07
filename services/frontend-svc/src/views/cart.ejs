@@ -1,0 +1,91 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title><%= title %></title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛒</text></svg>"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"/>
+<link rel="stylesheet" href="/css/main.css"/>
+<%- include('partials/csrf-meta') %>
+</head><body>
+<%- include('partials/navbar') %>
+<main class="main-content">
+<% if(locals.flash){%><div class="container" style="padding-top:16px;"><div class="alert alert-<%=flash.type%>"><%=flash.message%></div></div><%}%>
+
+<div class="section-sm">
+  <div class="container">
+    <h1 style="margin-bottom:32px;">Your Cart <span style="color:var(--muted);font-size:1.2rem;font-weight:400;">(<%= cart.item_count %> items)</span></h1>
+
+    <% if(!cart.items.length){ %>
+    <div style="text-align:center;padding:80px;background:var(--white);border-radius:var(--radius);box-shadow:var(--card-shadow);">
+      <div style="font-size:5rem;margin-bottom:16px;">🛒</div>
+      <h2 style="margin-bottom:8px;">Your cart is empty</h2>
+      <p style="color:var(--muted);margin-bottom:28px;">Looks like you haven't added anything yet.</p>
+      <a href="/products" class="btn btn-primary btn-lg">Start Shopping</a>
+    </div>
+    <% } else { %>
+    <div style="display:grid;grid-template-columns:1fr 320px;gap:32px;align-items:start;">
+      <div class="card">
+        <table class="cart-table">
+          <thead><tr><th>Product</th><th>Price</th><th>Quantity</th><th>Total</th><th></th></tr></thead>
+          <tbody>
+            <% cart.items.forEach(item=>{ %>
+            <tr class="cart-row">
+              <td>
+                <div style="display:flex;align-items:center;gap:12px;">
+                  <img src="<%= item.image || 'https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?w=100' %>" alt="<%= item.name %>" class="cart-item-image"/>
+                  <div>
+                    <div style="font-weight:600;font-size:.9rem;margin-bottom:2px;"><%= item.name %></div>
+                    <% if(item.variant){ %><div style="font-size:.78rem;color:var(--muted);"><%= item.variant.name %>: <%= item.variant.value %></div><%}%>
+                  </div>
+                </div>
+              </td>
+              <td style="font-weight:500;">₹<%= item.price.toLocaleString('en-IN') %></td>
+              <td>
+                <div class="qty-control" data-product-id="<%= item.product_id %>">
+                  <button class="qty-btn" data-action="minus">−</button>
+                  <span class="qty-value" data-pid="<%= item.product_id %>"><%= item.quantity %></span>
+                  <button class="qty-btn" data-action="plus">+</button>
+                </div>
+              </td>
+              <td style="font-weight:700;" data-line-total="<%= item.product_id %>" data-price="<%= item.price %>" data-qty="<%= item.quantity %>">
+                ₹<%= (item.price * item.quantity).toLocaleString('en-IN') %>
+              </td>
+              <td>
+                <button class="btn btn-sm" style="color:var(--danger);background:none;border:none;cursor:pointer;font-size:1.1rem;" data-remove-id="<%= item.product_id %>" onclick="removeCartItem('<%= item.product_id %>')">🗑</button>
+              </td>
+            </tr>
+            <%})%>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cart-summary">
+        <h3 style="margin-bottom:20px;">Order Summary</h3>
+        <div class="summary-row"><span>Subtotal</span><span id="cartSubtotal">₹<%= cart.subtotal.toLocaleString('en-IN') %></span></div>
+        <div class="summary-row"><span>Shipping</span><span style="color:var(--success);">
+          <% if(cart.subtotal >= 1000){%>FREE<%} else {%>₹79<%}%>
+        </span></div>
+        <div class="summary-row"><span>GST (18%)</span><span>₹<%= (cart.subtotal * 0.18).toFixed(2) %></span></div>
+        <div class="summary-row total">
+          <span>Total</span>
+          <span style="color:var(--primary);">₹<%= (cart.subtotal + (cart.subtotal>=1000?0:79) + cart.subtotal*0.18).toFixed(2) %></span>
+        </div>
+        <a href="/checkout" class="btn btn-primary btn-full btn-lg" style="margin-top:20px;">Proceed to Checkout →</a>
+        <a href="/products" class="btn btn-outline btn-full" style="margin-top:10px;">Continue Shopping</a>
+        <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;font-size:.78rem;color:var(--muted);">
+          <span>🔒 Secure Checkout</span>
+          <span>🚚 Free shipping ≥ ₹1000</span>
+        </div>
+      </div>
+    </div>
+    <%}%>
+  </div>
+</div>
+</main>
+<%- include('partials/footer') %>
+<div class="toast-container" id="toastContainer"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="/js/app.js"></script>
+<script>
+gsap.from('.cart-row', { opacity:0, y:20, stagger:.06, duration:.4, ease:'power2.out' });
+</script>
+</body></html>
