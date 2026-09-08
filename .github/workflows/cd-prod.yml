@@ -40,7 +40,7 @@ jobs:
     name: Awaiting Production Approval
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    environment: production   # required-reviewer protection rule blocks until approved
+    environment: production  
 
     steps:
       - run: |

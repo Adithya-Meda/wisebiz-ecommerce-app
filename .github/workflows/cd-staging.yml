@@ -33,11 +33,11 @@ permissions:
 
 env:
   AWS_REGION: us-east-1
-  GITOPS_REPO: ${{ vars.GITOPS_REPO }}          # e.g. Adithya-Meda/wisebiz-gitops
+  GITOPS_REPO: ${{ vars.GITOPS_REPO }}
   GITOPS_VALUES_FILE: helm/wisebiz/values-staging.yaml
-  ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}       # e.g. argocd.wisebiz.online
+  ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
   ARGOCD_APP: wisebiz-staging
-  STAGING_URL: ${{ secrets.STAGING_URL }}           # e.g. https://staging.wisebiz.online
+  STAGING_URL: ${{ secrets.STAGING_URL }}           
 
 # Prevent concurrent staging deploys — queue them instead
 concurrency:
