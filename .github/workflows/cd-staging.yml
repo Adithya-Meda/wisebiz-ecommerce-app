@@ -35,9 +35,9 @@ env:
   AWS_REGION: us-east-1
   GITOPS_REPO: ${{ vars.GITOPS_REPO }}          # e.g. Adithya-Meda/wisebiz-gitops
   GITOPS_VALUES_FILE: helm/wisebiz/values-staging.yaml
-  ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}       # e.g. argocd.wisebiz.online
+  ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}       # e.g. argocd.wisebiz.online
   ARGOCD_APP: wisebiz-staging
-  STAGING_URL: ${{ vars.STAGING_URL }}           # e.g. https://staging.wisebiz.online
+  STAGING_URL: ${{ secrets.STAGING_URL }}           # e.g. https://staging.wisebiz.online
 
 # Prevent concurrent staging deploys — queue them instead
 concurrency:
@@ -230,8 +230,7 @@ jobs:
         run: |
           argocd login "${{ env.ARGOCD_SERVER }}" \
             --auth-token "${{ secrets.ARGOCD_STAGING_TOKEN }}" \
-            --grpc-web \
-            --insecure
+            --grpc-web
 
       - name: Trigger sync
         run: |
