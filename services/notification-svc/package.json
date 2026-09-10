@@ -7,11 +7,14 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js"
   },
+  "overrides": {
+    "multer": "^2.3.0"
+  },
   "dependencies": {
     "@Adithya-Meda/wisebiz-shared": "^1.0.0",
     "amqplib": "^0.10.4",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2",
+    "express": "^5.1.0",
     "nodemailer": "^9.1.1"
   }
 }
