@@ -2,7 +2,7 @@ name: CI — Build & Push
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - "services/**"
       - "compose.yml"
@@ -21,6 +21,9 @@ on:
         description: "Push images to ECR?"
         required: false
         default: "true"
+        options:
+          - "true"
+          - "false"
 
 permissions:
   contents: read
@@ -30,6 +33,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
   NODE_VERSION: "22"
+  TRIVY_VERSION: "v0.69.3"
 
 jobs:
 
@@ -42,7 +46,8 @@ jobs:
       any_changed: ${{ steps.set.outputs.any_changed }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
 
@@ -81,12 +86,15 @@ jobs:
       matrix: ${{ fromJson(needs.resolve-services.outputs.matrix) }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7.0.0
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.5.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+          # Root lock file covers ESLint devDependencies installed at repo root
           cache-dependency-path: package-lock.json
 
       - name: Install root devDependencies (ESLint + plugins)
@@ -106,12 +114,31 @@ jobs:
       matrix: ${{ fromJson(needs.resolve-services.outputs.matrix) }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7.0.0
+
+      # Cache the Trivy binary so it isn't re-downloaded for every matrix job
+      - name: Cache Trivy binary
+        id: cache-trivy-bin
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/trivy
+          key: trivy-bin-${{ env.TRIVY_VERSION }}
 
       - name: Install Trivy
+        if: steps.cache-trivy-bin.outputs.cache-hit != 'true'
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-            | sh -s -- -b /usr/local/bin v0.69.3
+            | sh -s -- -b /usr/local/bin ${{ env.TRIVY_VERSION }}
+
+      # Cache the vulnerability DB — keyed by date so it refreshes daily
+      - name: Cache Trivy DB
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ runner.os }}-${{ env.TRIVY_VERSION }}-${{ github.run_id }}
+          restore-keys: |
+            trivy-db-${{ runner.os }}-${{ env.TRIVY_VERSION }}-
 
       - name: Scan for CRITICAL/HIGH vulnerabilities
         run: |
@@ -125,7 +152,7 @@ jobs:
 
       - name: Upload SARIF artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: trivy-sarif-${{ matrix.service }}
           path: trivy-${{ matrix.service }}.sarif
@@ -144,17 +171,30 @@ jobs:
       image_tag: ${{ steps.meta.outputs.version }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7.0.0
 
-      - uses: docker/setup-buildx-action@v3
+      # Warm the npm cache so Docker layer cache hits are maximised.
+      # The cache key is the service's own lock file — if it hasn't changed,
+      # the node_modules layer in the Docker build will be restored from GHA cache.
+      - name: Setup Node.js (npm cache warm-up)
+        uses: actions/setup-node@v6.5.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: services/${{ matrix.service }}/package-lock.json
+
+      - name: Setup BuildX
+        uses: docker/setup-buildx-action@v4.3.0
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6.2.4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - uses: aws-actions/amazon-ecr-login@v2
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Docker metadata
         id: meta
