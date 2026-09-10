@@ -8,7 +8,22 @@ const { NotFoundError, AppError, ForbiddenError, createLogger } = require('@Adit
 const logger = createLogger('order-svc:service');
 
 const PRODUCT_SVC_URL = process.env.PRODUCT_SVC_URL || 'http://localhost:3003';
+const CART_SVC_URL   = process.env.CART_SVC_URL   || 'http://localhost:3004';
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || '';
+
+// Allowlist of trusted internal service base URLs.
+// Only these origins are permitted for inter-service requests — prevents SSRF
+// if an env var is misconfigured or tampered with at the infrastructure level.
+const ALLOWED_SERVICE_ORIGINS = new Set(
+  [PRODUCT_SVC_URL, CART_SVC_URL].map((u) => new URL(u).origin)
+);
+
+function assertTrustedOrigin(url) {
+  const origin = new URL(url).origin;
+  if (!ALLOWED_SERVICE_ORIGINS.has(origin)) {
+    throw new AppError(`Blocked request to untrusted service origin: ${origin}`, 500, 'SSRF_BLOCKED');
+  }
+}
 
 /**
  * Decrement stock for each item in a placed order.
@@ -17,16 +32,18 @@ const INTERNAL_SECRET = process.env.INTERNAL_SECRET || '';
  */
 async function decrementStock(items) {
   const results = await Promise.allSettled(
-    items.map((item) =>
-      axios.patch(
-        `${PRODUCT_SVC_URL}/api/products/${item.product_id}/stock`,
+    items.map((item) => {
+      const stockUrl = `${PRODUCT_SVC_URL}/api/products/${item.product_id}/stock`;
+      assertTrustedOrigin(stockUrl);
+      return axios.patch(
+        stockUrl,
         { delta: -item.quantity },
         {
           timeout: 5000,
           headers: { 'X-Internal-Secret': INTERNAL_SECRET },
         }
-      )
-    )
+      );
+    })
   );
 
   results.forEach((result, idx) => {
@@ -69,7 +86,8 @@ function generateOrderNumber() {
 
 async function createOrder(userId, userEmail, data) {
   // 1. Fetch cart snapshot from cart-svc
-  const cartUrl = `${process.env.CART_SVC_URL || 'http://localhost:3004'}/api/cart/internal/snapshot/${userId}`;
+  const cartUrl = `${CART_SVC_URL}/api/cart/internal/snapshot/${userId}`;
+  assertTrustedOrigin(cartUrl);
   let cartData;
   try {
     const resp = await axios.get(cartUrl, {
