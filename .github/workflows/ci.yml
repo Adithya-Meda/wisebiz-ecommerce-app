@@ -87,17 +87,13 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: services/${{ matrix.service }}/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      - name: Install dependencies
+      - name: Install root devDependencies (ESLint + plugins)
         run: npm ci --ignore-scripts
-        working-directory: services/${{ matrix.service }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
 
       - name: ESLint
-        run: npx eslint src/ --max-warnings=0
-        working-directory: services/${{ matrix.service }}
+        run: npx eslint services/${{ matrix.service }}/src/ --max-warnings=0
 
   trivy-scan:
     name: Trivy Scan — ${{ matrix.service }}
