@@ -27,7 +27,7 @@ async function start() {
       await consumer.connect();
       logger.info('RabbitMQ consumer connected');
       break;
-    } catch (err) {
+    } catch {
       retries++;
       logger.warn(`RabbitMQ not ready (attempt ${retries}/${maxRetries}), retrying in 5s...`);
       await new Promise((r) => setTimeout(r, 5000));

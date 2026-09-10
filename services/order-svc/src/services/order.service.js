@@ -95,7 +95,7 @@ async function createOrder(userId, userEmail, data) {
       headers: { 'X-Internal-Secret': INTERNAL_SECRET },
     });
     cartData = resp.data.data;
-  } catch (err) {
+  } catch {
     throw new AppError('Failed to retrieve cart. Please try again.', 502, 'CART_UNAVAILABLE');
   }
 

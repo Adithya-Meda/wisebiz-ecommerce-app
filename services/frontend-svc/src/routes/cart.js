@@ -24,7 +24,7 @@ router.post('/items', requireAuth, async (req, res) => {
     try {
       const cart = await buildClient(req.session.accessToken).get('/api/cart');
       req.session.cartCount = cart.data?.data?.cart?.item_count || 0;
-    } catch (_) { /* */ }
+    } catch { /* */ }
     return res.json({ success: true, message: 'Added to cart' });
   }
   return res.status(response.status).json({ success: false, message: extractError(response) });

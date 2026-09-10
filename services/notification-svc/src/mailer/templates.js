@@ -46,7 +46,7 @@ function baseLayout(content, previewText = '') {
 }
 
 function orderPlaced(data) {
-  const { order_number, user_email, total_amount, currency, items, shipping_address } = data;
+  const { order_number, total_amount, currency, items, shipping_address } = data;
 
   const itemRows = (items || []).map((item) => `
     <tr>
@@ -114,7 +114,7 @@ function orderPlaced(data) {
 }
 
 function orderShipped(data) {
-  const { order_number, user_email } = data;
+  const { order_number } = data;
 
   const content = `
     <h2 style="margin:0 0 8px;color:#111827;font-size:22px;">Your Order Is On Its Way! 🚚</h2>
@@ -194,7 +194,7 @@ function orderCancelled(data) {
 }
 
 function welcomeEmail(data) {
-  const { first_name, email } = data;
+  const { first_name } = data;
 
   const content = `
     <h2 style="margin:0 0 8px;color:#111827;font-size:22px;">Welcome to WiseBiz, ${first_name}! 🎉</h2>
@@ -222,7 +222,7 @@ function welcomeEmail(data) {
 }
 
 function passwordReset(data) {
-  const { email, reset_url } = data;
+  const { reset_url } = data;
 
   const content = `
     <h2 style="margin:0 0 8px;color:#111827;font-size:22px;">Password Reset Request 🔑</h2>

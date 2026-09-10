@@ -1,7 +1,7 @@
 'use strict';
 
 const { Router } = require('express');
-const { publicClient, extractError } = require('../lib/api');
+const { publicClient } = require('../lib/api');
 
 const router = Router();
 

@@ -58,7 +58,7 @@ router.get('/:slug', async (req, res, next) => {
     try {
       const relRes = await publicClient.get(`/api/products/${product._id}/related`);
       related = relRes.data?.data?.products || [];
-    } catch (_) { /* non-critical */ }
+    } catch { /* non-critical */ }
 
     return res.render('products/detail', {
       title:      `${product.name} — WiseBiz`,

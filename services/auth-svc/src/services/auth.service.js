@@ -39,7 +39,7 @@ async function publishEvent(routingKey, payload) {
   } catch (err) {
     logger.warn('Could not publish event (non-critical)', { routingKey, error: err.message });
   } finally {
-    if (conn) { try { await conn.close(); } catch (_) { /* */ } }
+    if (conn) { try { await conn.close(); } catch { /* */ } }
   }
 }
 

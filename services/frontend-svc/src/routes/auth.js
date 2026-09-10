@@ -59,10 +59,10 @@ router.post('/register', redirectIfAuth, verifyCsrf, async (req, res, next) => {
 });
 
 // ── Logout ────────────────────────────────────────────────────────────────────
-router.post('/logout', requireAuth, verifyCsrf, async (req, res, next) => {
+router.post('/logout', requireAuth, verifyCsrf, async (req, res) => {
   try {
     await buildClient(req.session.accessToken).post('/api/auth/logout');
-  } catch (_err) { /* best-effort */ }
+  } catch { /* best-effort */ }
 
   req.session.destroy(() => {
     res.clearCookie('connect.sid');

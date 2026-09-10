@@ -167,8 +167,8 @@ async function connect() {
 }
 
 async function close() {
-  if (channel)    { try { await channel.close(); }    catch (_) { /* */ } }
-  if (connection) { try { await connection.close(); } catch (_) { /* */ } }
+  if (channel)    { try { await channel.close(); }    catch { /* */ } }
+  if (connection) { try { await connection.close(); } catch { /* */ } }
 }
 
 module.exports = { connect, close };

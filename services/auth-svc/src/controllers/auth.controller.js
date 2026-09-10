@@ -98,7 +98,7 @@ async function changePassword(req, res, next) {
 
 async function forgotPassword(req, res, next) {
   try {
-    const { token, userId, email } = await authService.forgotPassword(req.body.email);
+    const { token, email } = await authService.forgotPassword(req.body.email);
 
     // Publish event to notification-svc — non-blocking, non-fatal
     if (token) {
@@ -126,7 +126,7 @@ async function forgotPassword(req, res, next) {
         } catch (e) {
           logger.warn('Could not publish password reset event', { error: e.message });
         } finally {
-          if (conn) { try { await conn.close(); } catch (_) { /* */ } }
+          if (conn) { try { await conn.close(); } catch { /* */ } }
         }
       })();
     }

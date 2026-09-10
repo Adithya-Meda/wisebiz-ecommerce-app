@@ -1,6 +1,5 @@
 'use strict';
 
-const path = require('path');
 const sharp = require('sharp');
 const { query, getClient } = require('../db/pool');
 const { NotFoundError, createLogger, resolveFileUrl, deleteFile, STORAGE_BACKEND } = require('@Adithya-Meda/wisebiz-shared');

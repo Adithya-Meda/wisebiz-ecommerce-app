@@ -17,7 +17,7 @@ const MOCK_GATEWAY_OUTCOMES = {
   '3333': { status: 'failed',    delay: 300, reason: 'Invalid CVV' },
 };
 
-async function simulateGateway(paymentMethod, amount) {
+async function simulateGateway(paymentMethod, _amount) {
   const last4 = paymentMethod?.card_last4 || '0000';
   const outcome = MOCK_GATEWAY_OUTCOMES[last4] || { status: 'succeeded', delay: 700 };
 
@@ -114,7 +114,7 @@ async function confirmPayment(intentId, userId) {
           headers: { 'X-Internal-Secret': process.env.INTERNAL_SECRET || '' },
         }
       );
-    } catch (_err) {
+    } catch {
       // Non-critical — cart TTL will expire naturally
     }
 
