@@ -8,17 +8,20 @@
     "dev": "nodemon src/index.js",
     "migrate": "node src/db/migrate.js"
   },
+  "overrides": {
+    "multer": "^2.3.0"
+  },
   "dependencies": {
     "@Adithya-Meda/wisebiz-shared": "^1.0.0",
     "amqplib": "^0.10.4",
     "axios": "^1.15.1",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2",
+    "express": "^5.1.0",
     "helmet": "^7.1.0",
-    "joi": "^17.13.3",
-    "nodemailer": "9.0.3",
+    "joi": "^17.13.6",
+    "nodemailer": "^9.1.1",
     "pg": "^8.12.0",
-    "sharp": "0.35.3",
+    "sharp": "^0.35.4",
     "uuid": "^14.0.1"
   }
 }
