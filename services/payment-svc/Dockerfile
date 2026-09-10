@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
 # node:22-bookworm-slim — pinned to immutable SHA digest for supply chain security.
-FROM node:22-bookworm-slim@sha256:a5a2f04592e9a97e04e9e3b55a8cf66eedc46dd57cdade20546ab42f836a9de4 AS build
+FROM node:22-bookworm-slim@sha256:4d676821dff059fd00d277ee4261ef34ea712317fed0737c03941481b5760c96 AS build
 WORKDIR /app
 COPY services/payment-svc/package*.json services/payment-svc/.npmrc ./
 RUN --mount=type=secret,id=NODE_AUTH_TOKEN \
     export NODE_AUTH_TOKEN=$(cat /run/secrets/NODE_AUTH_TOKEN) && npm ci --ignore-scripts
 
-FROM node:22-bookworm-slim@sha256:a5a2f04592e9a97e04e9e3b55a8cf66eedc46dd57cdade20546ab42f836a9de4
+FROM node:22-bookworm-slim@sha256:4d676821dff059fd00d277ee4261ef34ea712317fed0737c03941481b5760c96
 WORKDIR /app
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --chown=node:node services/payment-svc/src ./src
