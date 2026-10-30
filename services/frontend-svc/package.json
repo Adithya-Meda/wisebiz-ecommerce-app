@@ -8,7 +8,7 @@
     "dev": "nodemon src/index.js"
   },
   "overrides": {
-    "multer": "^2.3.0"
+    "multer": "^2.5.0"
   },
   "dependencies": {
     "@Adithya-Meda/wisebiz-shared": "^1.0.0",
